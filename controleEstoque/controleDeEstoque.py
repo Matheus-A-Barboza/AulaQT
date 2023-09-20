@@ -2,19 +2,22 @@ import sqlite3
 import sys
 from datetime import datetime
 
+from PySide6 import QtGui
 from PySide6.QtWidgets import QMainWindow, QApplication, QHBoxLayout, QVBoxLayout, QTableWidget, QAbstractItemView, \
-    QPushButton, QLineEdit, QLabel, QWidget, QMessageBox
+    QPushButton, QLabel, QLineEdit, QWidget, QMessageBox, QTableWidgetItem
 
 
-class Estoque(QMainWindow):
+class EstoqueApp(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle('Controle de Estoque')
+        self.setWindowTitle('Controle de estoque')
+        self.setWindowIcon(QtGui.QIcon('brown-box.png'))
         self.setGeometry(100, 100, 800, 400)
 
         self.conn = sqlite3.connect('estoque.db')
         self.cursor = self.conn.cursor()
+        self.id_produto = None
 
         self.criar_tabela()
 
@@ -30,23 +33,22 @@ class Estoque(QMainWindow):
 
         layout_direita.addWidget(self.tbl_produtos)
 
-        self.btn_cadastar = QPushButton('Cadastrar')
+        self.btn_cadastrar = QPushButton('Cadastrar')
         self.btn_remover = QPushButton('Remover')
         self.btn_editar = QPushButton('Editar')
-        self.btn_limpar = QPushButton('Limpar Campos')
 
         layout_botoes.addWidget(self.btn_editar)
         layout_botoes.addWidget(self.btn_remover)
 
-        self.lbl_nome = QLabel('Nome do Produto')
+        self.lbl_nome = QLabel('Nome do produto')
         self.txt_nome = QLineEdit()
-        self.lbl_preco = QLabel('Preço do Produto')
+        self.lbl_preco = QLabel('Preço do produto')
         self.txt_preco = QLineEdit()
-        self.lbl_qnt = QLabel('Quantidade do Produto')
-        self.txt_qnt = QLineEdit()
-        self.lbl_data = QLabel('Data de Validade')
+        self.lbl_quantidade = QLabel('Quantidade em estoque')
+        self.txt_quantidade = QLineEdit()
+        self.lbl_data = QLabel('Data de validade')
         self.txt_data = QLineEdit()
-        self.lbl_categoria = QLabel('Categoria do Produto')
+        self.lbl_categoria = QLabel('Categoria')
         self.txt_categoria = QLineEdit()
         self.lbl_fornecedor = QLabel('Fornecedor')
         self.txt_fornecedor = QLineEdit()
@@ -55,17 +57,15 @@ class Estoque(QMainWindow):
         layout_esquerda.addWidget(self.txt_nome)
         layout_esquerda.addWidget(self.lbl_preco)
         layout_esquerda.addWidget(self.txt_preco)
-        layout_esquerda.addWidget(self.lbl_qnt)
-        layout_esquerda.addWidget(self.txt_qnt)
+        layout_esquerda.addWidget(self.lbl_quantidade)
+        layout_esquerda.addWidget(self.txt_quantidade)
         layout_esquerda.addWidget(self.lbl_data)
         layout_esquerda.addWidget(self.txt_data)
         layout_esquerda.addWidget(self.lbl_categoria)
         layout_esquerda.addWidget(self.txt_categoria)
         layout_esquerda.addWidget(self.lbl_fornecedor)
         layout_esquerda.addWidget(self.txt_fornecedor)
-        layout_esquerda.addWidget(self.btn_cadastar)
-        # layout_esquerda.addWidget(self.btn_limpar_banco)
-        layout_esquerda.addWidget(self.btn_limpar)
+        layout_esquerda.addWidget(self.btn_cadastrar)
         layout_esquerda.addLayout(layout_botoes)
 
         layout_principal.addLayout(layout_esquerda)
@@ -75,71 +75,190 @@ class Estoque(QMainWindow):
         central_widget.setLayout(layout_principal)
         self.setCentralWidget(central_widget)
 
-        self.btn_cadastar.clicked.connect(self.inserir_produtos)
-        self.btn_limpar.clicked.connect(self.limpar_campos)
+        self.btn_cadastrar.clicked.connect(self.inserir_produto)
+        self.btn_editar.clicked.connect(self.editar_produtos)
+        self.btn_remover.clicked.connect(self.remover_produto)
+        self.carregar_lista()
 
     def criar_tabela(self):
-        try:
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS produtos
-                (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nome TEXT NOT NULL,
-                preco REAL TEXT NOT NULL,
-                quantidade INT NOT NULL,
-                data_validade TEXT,
-                categoria TEXT NOT NULL,
-                fornecedor TEXT NOT NULL
-                )''')
-            self.conn.commit()
-        except Exception as e:
-            print(e)
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS produtos
+                            (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            nome TEXT NOT NULL,
+                            preco REAL NOT NULL, 
+                            quantidade INTEGER NOT NULL,
+                            data_validade TEXT,
+                            categoria TEXT,
+                            fornecedor TEXT)''')
 
-    def inserir_produtos(self):
-        if self.validar_data():
-            try:
-                self.cursor.execute(
-                    "INSERT INTO produtos (nome, preco,"
-                    "quantidade, data_validade, categoria,"
-                    "fornecedor) VALUES (?, ?, ?, ?, ?, ?)", (self.txt_nome.text(),
-                                                              self.txt_preco.text(),
-                                                              self.txt_qnt.text(),
-                                                              self.txt_data.text(),
-                                                              self.txt_categoria.text(),
-                                                              self.txt_fornecedor.text()))
-                self.conn.commit()
-                QMessageBox.information(self, 'Cadastro de Produto', 'Produto Adicionado com Sucesso')
+        self.conn.commit()
+
+    def inserir_produto(self):
+        if self.validar_data() and self.validar_preco() and self.validar_quantidade() and self.validar_nome():
+            if self.btn_cadastrar.text() == 'Cadastrar':
+                try:
+                    self.cursor.execute("INSERT INTO produtos (nome, preco," 
+                                        "quantidade, data_validade, categoria, "
+                                        "fornecedor) VALUES (?, ?, ?, ?, ?, ?)", (self.txt_nome.text(),
+                                                                                  self.txt_preco.text(),
+                                                                                  self.txt_quantidade.text(),
+                                                                                  self.txt_data.text(),
+                                                                                  self.txt_categoria.text(),
+                                                                                  self.txt_fornecedor.text()))
+                    self.conn.commit()
+                    QMessageBox.information(self, 'Cadastro de produto', 'Produto cadastrado com sucesso!')
+                    self.limpar_campos()
+                    self.carregar_lista()
+
+                except Exception as e:
+                    print(e)
+            else:
+                try:
+                    self.cursor.execute("UPDATE produtos SET nome=?, preco=?,"
+                                        "quantidade=?, data_validade=?,"
+                                        "categoria=?, fornecedor=? WHERE id=?",
+                                        (self.txt_nome.text(),
+                                        float(self.txt_preco.text()),
+                                        int(self.txt_quantidade.text()),
+                                        self.txt_data.text(),
+                                        self.txt_categoria.text(),
+                                        self.txt_fornecedor.text(),
+                                        self.id_produto))
+
+                    self.conn.commit()
+                    QMessageBox.information(self, 'Cadastro do Produto',
+                                            'Produto atualizado com Sucesso!')
+
+                except sqlite3.Error as e:
+                    QMessageBox.warning(self, 'Alerta', 'Não foi possivel atualizar o item\n'
+                                                        f'Erro: {e}')
+                self.carregar_lista()
                 self.limpar_campos()
+                self.btn_cadastrar.setText('Cadastrar')
+                self.btn_editar.setText('Editar')
 
-            except Exception as e:
-                print(e)
+    def editar_produtos(self):
+        id_produto = None
+        item_atual = self.tbl_produtos.currentItem()
+        if self.btn_editar.text() == 'Editar':
+            if item_atual:
+                self.id_produto = int(self.tbl_produtos.item(item_atual.row(),
+                                                        0).text())
 
-    # def limpar_banco(self):
-    #     try:
-    #         self.cursor.execute(
-    #             "TRUNCATE TABLE produtos"
-    #         )
-    #         self.conn.commit()
-    #     except Exception as e:
-    #         print(e)
+                self.txt_nome.setText(self.tbl_produtos.item(item_atual.row(),
+                                                     1).text())
+
+                self.txt_preco.setText(self.tbl_produtos.item(item_atual.row(),
+                                                      2).text())
+
+                self.txt_quantidade.setText(self.tbl_produtos.item(item_atual.row(),
+                                                      3).text())
+
+                self.txt_data.setText(self.tbl_produtos.item(item_atual.row(),
+                                                      4).text())
+
+                self.txt_categoria.setText(self.tbl_produtos.item(item_atual.row(),
+                                                      5).text())
+
+                self.txt_fornecedor.setText(self.tbl_produtos.item(item_atual.row(),
+                                                      6).text())
+
+                self.btn_cadastrar.setText('Atualizar')
+                self.btn_editar.setText('Cancelar')
+
+            else:
+                QMessageBox.warning(self, 'Aviso', 'Selecione um produto para Editar')
+        else:
+            self.limpar_campos()
+            self.btn_cadastrar.setText('Cadastrar')
+            self.btn_editar.setText('Editar')
+
+
+    def carregar_lista(self):
+        self.tbl_produtos.clear()
+
+        self.cursor.execute('SELECT * FROM produtos')
+        produtos = self.cursor.fetchall()
+
+        colunas = ['ID', 'Nome', 'Preço', 'Quantidade', 'Validade', 'Categoria', 'Fornecedor']
+
+        self.tbl_produtos.setColumnCount(len(colunas))
+        self.tbl_produtos.setHorizontalHeaderLabels(colunas)
+        self.tbl_produtos.resizeColumnToContents(0)
+        self.tbl_produtos.setRowCount(len(produtos))
+
+        for linha, produto in enumerate(produtos):
+            for coluna, valor in enumerate(produto):
+                # Cria um objeto QTable compativel com a tabela QTable
+                item = QTableWidgetItem(str(valor))
+                self.tbl_produtos.setItem(linha, coluna, item)
+        self.tbl_produtos.resizeColumnToContents(0)
+
 
     def limpar_campos(self):
-        self.txt_nome.clear()
-        self.txt_preco.clear()
-        self.txt_qnt.clear()
-        self.txt_data.clear()
-        self.txt_categoria.clear()
+        self.txt_nome.clear(),
+        self.txt_preco.clear(),
+        self.txt_quantidade.clear(),
+        self.txt_data.clear(),
+        self.txt_categoria.clear(),
         self.txt_fornecedor.clear()
+
+    def remover_produto(self):
+        item_atual = self.tbl_produtos.currentItem()
+
+        if item_atual:
+            self.id_produto = int(self.tbl_produtos.item(item_atual.row(), 0).text())
+            resposta = QMessageBox.question(self, 'Confirmação','Deseja remover o produto?',
+                                            QMessageBox.Yes | QMessageBox.No)
+            if resposta == QMessageBox.Yes:
+                self.cursor.execute("DELETE FROM produtos WHERE id=?", (self.id_produto,))
+                self.conn.commit()
+                self.carregar_lista()
+                self.limpar_campos()
+        else:
+            QMessageBox.warning(self, 'Alerta', 'Selecione um item a ser removido.')
+
 
     def validar_data(self):
         try:
-            datetime.strptime(self.txt_data.text(), '%d,%m,%Y')
+            datetime.strptime(self.txt_data.text(), '%d/%m/%Y')
             return True
+
         except:
-            QMessageBox.warning(self, 'Aviso', 'Data de Validade fora do padrão dd/mm/aaaa')
+            QMessageBox.warning(self, 'Aviso', 'Data de validade fora do padrão dd/mm/aaaa.')
+            return False
+
+
+    def validar_preco(self):
+        try:
+            float(self.txt_preco.text())
+            return True
+
+        except:
+            QMessageBox.warning(self, 'Aviso', 'Valor inserido no campo "preço" está incorreto.')
+            return False
+
+
+    def validar_quantidade(self):
+        try:
+            int(self.txt_quantidade.text())
+            return True
+
+        except:
+            QMessageBox.warning(self, 'Aviso', 'Valor inserido no campo "quantidade" não é um número real.')
+            return False
+
+
+    def validar_nome(self):
+        if self.txt_nome.text() != '':
+            return True
+
+        else:
+            QMessageBox.warning(self, 'Aviso', 'O campo "nome" deve estar preenchido.')
+            return False
 
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    window = Estoque()
+    window = EstoqueApp()
     window.show()
     sys.exit(app.exec())
